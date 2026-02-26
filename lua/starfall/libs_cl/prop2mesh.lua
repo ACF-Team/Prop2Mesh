@@ -29,8 +29,8 @@ return function( instance )
     local p2m_library = instance.Libraries.p2m
     local owrap, ounwrap = instance.WrapObject, instance.UnwrapObject
     local ents_methods, wrap, unwrap = instance.Types.Entity.Methods, instance.Types.Entity.Wrap, instance.Types.Entity.Unwrap
-    local ang_meta, aunwrap = instance.Types.Angle, instance.Types.Angle.Unwrap
-    local vec_meta, vunwrap = instance.Types.Vector, instance.Types.Vector.Unwrap
+    local ang_meta, awrap, aunwrap = instance.Types.Angle, instance.Types.Angle.Wrap, instance.Types.Angle.Unwrap
+    local vec_meta, vwrap, vunwrap = instance.Types.Vector, instance.Types.Vector.Wrap, instance.Types.Vector.Unwrap
     local col_meta, cwrap, cunwrap = instance.Types.Color, instance.Types.Color.Wrap, instance.Types.Color.Unwrap
     local checkpermission = instance.player ~= SF.Superuser and SF.Permissions.check or function() end
 
@@ -127,6 +127,15 @@ return function( instance )
         ent:SetControllerPos(index, vunwrap(pos))
     end
 
+    function ents_methods:p2mGetPos(index)
+        CheckType(self, ents_metatable)
+        local ent = unwrap(self)
+        local info = getControllerInfo(ent, index)
+        if not info then return end
+
+        return vwrap(info.linkpos or Vector())
+    end
+
     function ents_methods:p2mSetAng(index, ang)
         CheckType(self, ents_metatable)
         local ent = unwrap(self)
@@ -134,6 +143,15 @@ return function( instance )
         checkpermission(instance, ent, "entities.setRenderProperty")
 
         ent:SetControllerAng(index, aunwrap(ang))
+    end
+
+    function ents_methods:p2mGetAng(index)
+        CheckType(self, ents_metatable)
+        local ent = unwrap(self)
+        local info = getControllerInfo(ent, index)
+        if not info then return end
+
+        return awrap(info.linkang or Angle())
     end
 
     function ents_methods:p2mSetMaterial(index, mat)
