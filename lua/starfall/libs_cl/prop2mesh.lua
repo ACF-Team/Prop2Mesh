@@ -153,27 +153,6 @@ return function( instance )
         return getControllerInfo(ent, index).mat
     end
 
-    function ents_methods:p2mSetUV(index, uvs)
-        CheckType(self, ents_metatable)
-        CheckLuaType(uvs, TYPE_NUMBER)
-        local ent = unwrap(self)
-        if not getControllerInfo(ent, index) then return end
-        checkpermission(instance, ent, "entities.setRenderProperty")
-
-        uvs = math.Clamp(math.floor(math.abs(uvs)), 0, 512)
-        ent:SetControllerUVS(index, uvs)
-    end
-
-    function ents_methods:p2mSetBump(index, bump)
-        CheckType(self, ents_metatable)
-        CheckLuaType(bump, TYPE_BOOL)
-        local ent = unwrap(self)
-        if not getControllerInfo(ent, index) then return end
-        checkpermission(instance, ent, "entities.setRenderProperty")
-
-        ent:SetControllerBump(index, bump)
-    end
-
     function ents_methods:p2mSetScale(index, scale)
         CheckType(self, ents_metatable)
         local ent = unwrap(self)

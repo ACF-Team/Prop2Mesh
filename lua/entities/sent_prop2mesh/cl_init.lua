@@ -649,26 +649,6 @@ function ENT:SetControllerMat(index, mat)
 	Ent_SetMaterial(infoEnt, mat)
 end
 
-function ENT:SetControllerUVS(index, uvs)
-	local infoEnt
-	uvs, infoEnt = applyPropertyWithKVPass(self, index, "uvs", uvs)
-	if uvs == nil then return end
-	if not IsValid(infoEnt) then return end
-
-	infoEnt.uvs = uvs
-	infoEnt.uniqueID = self.prop2mesh_controllers[index].uniqueID
-end
-
-function ENT:SetControllerBump(index, bump)
-	local infoEnt
-	bump, infoEnt = applyPropertyWithKVPass(self, index, "bump", bump)
-	if bump == nil then return end
-	if not IsValid(infoEnt) then return end
-
-	infoEnt.bump = bump
-	infoEnt.uniqueID = self.prop2mesh_controllers[index].uniqueID
-end
-
 function ENT:SetControllerScale(index, scale)
 	local infoEnt
 	scale, infoEnt = applyPropertyWithKVPass(self, index, "scale", scale)
