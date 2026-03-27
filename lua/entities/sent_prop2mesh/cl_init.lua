@@ -285,18 +285,22 @@ local function getComplex(crc, uniqueID)
 	return meshes and meshes.complex
 end
 
-CreateClientConVar("prop2mesh_disabled_transparency", 0.05, true, false, "Disable transparency on prop2mesh entities (forces all to be opaque)", 0, 1)
-
 local vec = Vector()
+
+local serverAllowsTransparency = GetConVar("prop2mesh_disabled_transparency_enabled"):GetBool()
+if serverAllowsTransparency then
+	CreateClientConVar("prop2mesh_disabled_transparency", 0.05, true, false, "Disable transparency on prop2mesh entities (forces all to be opaque)", 0, 1)
+
+	cvars.AddChangeCallback("prop2mesh_disabled_transparency", function(cvar, old, new)
+		debugwhite:SetFloat("$alpha", math.Clamp(tonumber(new) or 0, 0, 1))
+	end, "p2mdebugwhitealpha")
+end
+
 local debugwhite = CreateMaterial("p2mdebugwhite", "UnlitGeneric", {
 	["$basetexture"] = "color/white",
 	["$vertexcolor"] = 1,
-	["$alpha"] = GetConVar("prop2mesh_disabled_transparency"):GetFloat()
+	["$alpha"] = serverAllowsTransparency and GetConVar("prop2mesh_disabled_transparency"):GetFloat() or 1
 })
-
-cvars.AddChangeCallback("prop2mesh_disabled_transparency", function(cvar, old, new)
-	debugwhite:SetFloat("$alpha", math.Clamp(tonumber(new) or 0, 0, 1))
-end, "p2mdebugwhitealpha")
 
 local renderOverride
 do

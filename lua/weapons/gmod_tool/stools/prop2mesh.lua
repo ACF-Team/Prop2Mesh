@@ -960,6 +960,11 @@ local function BuildPanel_AddonSettings(self)
 
 	local slider = pnl:NumSlider("Transparency:", "prop2mesh_disabled_transparency", 0, 1, 2)
 
+	local serverAllowsTransparency = GetConVar("prop2mesh_disabled_transparency_enabled"):GetBool()
+	if not serverAllowsTransparency then
+		slider:SetEnabled( false )
+	end
+
 	local cbox = pnl:CheckBox("Disable everything", "prop2mesh_disable")
 	cbox:SetTooltip("Note: unless you rejoin, this will not apply to already generated meshes")
 	cbox.OnChange = function(_, value)
