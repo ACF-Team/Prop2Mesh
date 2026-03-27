@@ -958,6 +958,8 @@ local function BuildPanel_AddonSettings(self)
 		cbox.Label:SetTextColor(value and Color(255, 0, 0) or nil)
 	end
 
+	local slider = pnl:NumSlider("Transparency:", "prop2mesh_disabled_transparency", 0, 1, 2)
+
 	local cbox = pnl:CheckBox("Disable everything", "prop2mesh_disable")
 	cbox:SetTooltip("Note: unless you rejoin, this will not apply to already generated meshes")
 	cbox.OnChange = function(_, value)
