@@ -243,8 +243,7 @@ local function convexHull2D(points)
 	return hull, n - 1 -- The leftmost point closes the loop and repeats hull[1]
 end
 
--- Seals the hole a clip opened by fanning the cut points' convex hull. Sorting them by angle
--- about their centroid instead only orders a star-shaped face, so cuts came back as a sawtooth.
+-- Seals the hole a clip opened by fanning the cut points' convex hull
 local function capClippingPlane(temp, cut, plane, source, getUV, density)
 	if #cut < 3 then
 		return
@@ -297,8 +296,7 @@ local function capClippingPlane(temp, cut, plane, source, getUV, density)
 end
 
 -- method https:--github.com/chenchenyuyu/DEMO/blob/b6bf971a302c71403e0e34e091402982dfa3cd2d/app/src/pages/vr/decal/decalGeometry.js#L102
--- Density is the cap's texel density, measured once from the unclipped submesh. Without it
--- it's measured from verts, which from the second clip onward is already clipped geometry.
+-- Density is measured once from the unclipped submesh; without it, from already clipped verts.
 local function applyClippingPlane(verts, plane, length, getUV, seal, density)
 	local temp = {}
 	local cut = seal and {}
@@ -644,8 +642,7 @@ local function getVertsFromMDL(partnext, meshtex, meshbump, vmins, vmaxs, direct
 		end
 
 		if partclips then
-			-- Measured on the submesh every clip on this part shares. Only cacheable unscaled,
-			-- since scaling the positions changes the world area it's measured against.
+			-- Only cacheable unscaled, since scaling positions changes the world area measured
 			local density
 			if modeluv then
 				if partscale then
