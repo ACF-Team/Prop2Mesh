@@ -205,9 +205,47 @@ local function texelDensity(verts)
 	return math.sqrt(uvArea / worldArea)
 end
 
--- Seals the hole a clip opened by fanning the cut points around their centroid. Convex
--- cross-sections only; a concave cut will fan across its own concavity.
-local function capClippingPlane(temp, cut, plane, source, getUV)
+-- Convex hull of 2d points ({ x, y, pos }), counter-clockwise. Andrew's monotone chain.
+-- The table keeps stale entries past the returned count, so read the count, never #hull.
+local function convexHull2D(points)
+	table.sort(points, function(a, b)
+		if a.x ~= b.x then return a.x < b.x end
+		return a.y < b.y
+	end)
+
+	local function turn(o, a, b)
+		return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
+	end
+
+	local hull, n = {}, 0
+
+	-- Appends a point, dropping any tail that makes a non-left turn. Floor keeps the upper hull from eating the lower one.
+	local function append(p, floor)
+		while n > floor and turn(hull[n - 1], hull[n], p) <= 0 do
+			n = n - 1
+		end
+
+		n = n + 1
+		hull[n] = p
+	end
+
+	-- Lower hull, left to right
+	for i = 1, #points do
+		append(points[i], 1)
+	end
+
+	-- Upper hull, right to left. The rightmost point ends the lower hull, so start one short of it and keep it as the floor.
+	local floor = n
+	for i = #points - 1, 1, -1 do
+		append(points[i], floor)
+	end
+
+	return hull, n - 1 -- The leftmost point closes the loop and repeats hull[1]
+end
+
+-- Seals the hole a clip opened by fanning the cut points' convex hull. Sorting them by angle
+-- about their centroid instead only orders a star-shaped face, so cuts came back as a sawtooth.
+local function capClippingPlane(temp, cut, plane, source, getUV, density)
 	if #cut < 3 then
 		return
 	end
@@ -217,27 +255,24 @@ local function capClippingPlane(temp, cut, plane, source, getUV)
 	local capNormal = -plane
 	normalize(capNormal)
 
-	local right, up = planeBasis(capNormal)
+	-- Reversed, so the counter-clockwise hull comes back wound clockwise as seen from the front face
+	local up, right = planeBasis(capNormal)
 
 	-- Cut vertices inherit the submesh's fixup rotation, so the cap has to as well
 	local vrotate = cut[1].rotate
 
-	local centroid = Vector()
+	local projected = {}
 	for i = 1, #cut do
-		add(centroid, cut[i].pos)
-	end
-	centroid = centroid / #cut
-
-	local points = {}
-	for i = 1, #cut do
-		local offset = cut[i].pos - centroid
-		points[i] = { pos = cut[i].pos, ang = math.atan2(dot(up, offset), dot(right, offset)) }
+		local pos = cut[i].pos
+		projected[i] = { x = dot(right, pos), y = dot(up, pos), pos = pos }
 	end
 
-	-- Descending angle winds the fan clockwise as seen from the front face
-	table.sort(points, function(a, b) return a.ang > b.ang end)
+	local points, count = convexHull2D(projected)
+	if count < 3 then
+		return
+	end
 
-	local density = getUV and texelDensity(source)
+	density = getUV and (density or texelDensity(source))
 
 	local function capVertex(pos)
 		local vert = {
@@ -253,15 +288,18 @@ local function capClippingPlane(temp, cut, plane, source, getUV)
 		return vert
 	end
 
-	for i = 1, #points do
-		temp[#temp + 1] = capVertex(centroid)
+	-- A convex polygon fans from any of its own vertices
+	for i = 2, count - 1 do
+		temp[#temp + 1] = capVertex(points[1].pos)
 		temp[#temp + 1] = capVertex(points[i].pos)
-		temp[#temp + 1] = capVertex(points[i == #points and 1 or i + 1].pos)
+		temp[#temp + 1] = capVertex(points[i + 1].pos)
 	end
 end
 
 -- method https:--github.com/chenchenyuyu/DEMO/blob/b6bf971a302c71403e0e34e091402982dfa3cd2d/app/src/pages/vr/decal/decalGeometry.js#L102
-local function applyClippingPlane(verts, plane, length, getUV, seal)
+-- Density is the cap's texel density, measured once from the unclipped submesh. Without it
+-- it's measured from verts, which from the second clip onward is already clipped geometry.
+local function applyClippingPlane(verts, plane, length, getUV, seal, density)
 	local temp = {}
 	local cut = seal and {}
 	for i = 1, #verts, 3 do
@@ -360,7 +398,7 @@ local function applyClippingPlane(verts, plane, length, getUV, seal)
 	end
 
 	if cut then
-		capClippingPlane(temp, cut, plane, verts, getUV)
+		capClippingPlane(temp, cut, plane, verts, getUV, density)
 	end
 
 	return temp
@@ -425,8 +463,11 @@ local function getVertsFromPrimitive(partnext, meshtex, meshbump, vmins, vmaxs, 
 	end
 
 	if partclips then
+		-- Primitives are rebuilt per part rather than cached, so this is measured per part
+		local density = modeluv and texelDensity(submeshverts)
+
 		for clipid = 1, #partclips do
-			submeshverts = applyClippingPlane(submeshverts, partclips[clipid].n, partclips[clipid].d, modeluv, partclips[clipid].seal)
+			submeshverts = applyClippingPlane(submeshverts, partclips[clipid].n, partclips[clipid].d, modeluv, partclips[clipid].seal, density)
 		end
 	end
 
@@ -603,13 +644,26 @@ local function getVertsFromMDL(partnext, meshtex, meshbump, vmins, vmaxs, direct
 		end
 
 		if partclips then
+			-- Measured on the submesh every clip on this part shares. Only cacheable unscaled,
+			-- since scaling the positions changes the world area it's measured against.
+			local density
+			if modeluv then
+				if partscale then
+					density = texelDensity(submeshverts)
+				else
+					local entry = submeshes[submeshid]
+					entry.p2mdensity = entry.p2mdensity or texelDensity(submeshverts)
+					density = entry.p2mdensity
+				end
+			end
+
 			if submeshfix then
 				for clipid = 1, #partclips do
-					submeshverts = applyClippingPlane(submeshverts, submeshfix.diff and partclips[clipid].no or partclips[clipid].n, partclips[clipid].d, modeluv, partclips[clipid].seal)
+					submeshverts = applyClippingPlane(submeshverts, submeshfix.diff and partclips[clipid].no or partclips[clipid].n, partclips[clipid].d, modeluv, partclips[clipid].seal, density)
 				end
 			else
 				for clipid = 1, #partclips do
-					submeshverts = applyClippingPlane(submeshverts, partclips[clipid].n, partclips[clipid].d, modeluv, partclips[clipid].seal)
+					submeshverts = applyClippingPlane(submeshverts, partclips[clipid].n, partclips[clipid].d, modeluv, partclips[clipid].seal, density)
 				end
 			end
 		end
