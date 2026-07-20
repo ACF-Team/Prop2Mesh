@@ -81,6 +81,27 @@ function prop2mesh.sanitizeCustom(partlist) -- remove unused obj data
 	partlist.custom = custom
 end
 
+-- Improved Clipping stores clips as entity-local { Normal, Distance } planes, which map
+-- directly onto prop2mesh's { n, d }. Guarded on the global so neither addon depends on the other.
+local function improved_clips(part, ent)
+	if not ImprovedClipping then
+		return
+	end
+
+	local clips = ImprovedClipping.GetClips(ent)
+	if not clips[1] then
+		return
+	end
+
+	local pclips = part.clips or {}
+	for i = 1, #clips do
+		local clip = clips[i]
+		pclips[#pclips + 1] = { n = clip.Normal, d = clip.Distance, seal = clip.Seal ~= false or nil }
+	end
+
+	part.clips = pclips
+end
+
 local function basic_info(partlist, ent, worldpos, worldang)
 	local part = {}
 
@@ -111,6 +132,8 @@ local function basic_info(partlist, ent, worldpos, worldang)
 			part.clips = pclips
 		end
 	end
+
+	improved_clips(part, ent)
 
 	return part
 end
@@ -185,6 +208,8 @@ entclass.gmod_wire_hologram = function(partlist, ent, worldpos, worldang)
 		end
 	end
 
+	improved_clips(part, ent)
+
 	partlist[#partlist + 1] = part
 end
 
@@ -220,6 +245,8 @@ entclass.starfall_hologram = function(partlist, ent, worldpos, worldang)
 			part.clips = pclips
 		end
 	end
+
+	improved_clips(part, ent)
 
 	partlist[#partlist + 1] = part
 end

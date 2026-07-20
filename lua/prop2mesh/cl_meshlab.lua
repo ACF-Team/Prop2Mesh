@@ -175,9 +175,95 @@ local function clip(v1, v2, plane, length, getUV)
 	return vert
 end
 
+-- Two unit vectors spanning the plane, with right x up == normal
+local function planeBasis(normal)
+	local right = cross(math_abs(normal.z) < 0.9 and Vector(0, 0, 1) or Vector(1, 0, 0), normal)
+	normalize(right)
+
+	return right, cross(normal, right)
+end
+
+-- Texels per unit of the source mesh, so a cap matches the surrounding texture scale.
+-- Only used on the model-uv path; the box-uv path re-derives every uv afterwards.
+local function texelDensity(verts)
+	local uvArea, worldArea = 0, 0
+
+	for i = 1, #verts - 2, 3 do
+		local v1, v2, v3 = verts[i], verts[i + 1], verts[i + 2]
+
+		worldArea = worldArea + cross(v2.pos - v1.pos, v3.pos - v1.pos):Length()
+
+		if v1.u then
+			uvArea = uvArea + math_abs((v2.u - v1.u) * (v3.v - v1.v) - (v2.v - v1.v) * (v3.u - v1.u))
+		end
+	end
+
+	if worldArea < 1e-6 or uvArea < 1e-6 then
+		return 1/64
+	end
+
+	return math.sqrt(uvArea / worldArea)
+end
+
+-- Seals the hole a clip opened by fanning the cut points around their centroid. Convex
+-- cross-sections only; a concave cut will fan across its own concavity.
+local function capClippingPlane(temp, cut, plane, source, getUV)
+	if #cut < 3 then
+		return
+	end
+
+	-- Vertices with d > 0 are the ones discarded, so geometry on the normal side survives
+	-- and the cap faces back along the normal
+	local capNormal = -plane
+	normalize(capNormal)
+
+	local right, up = planeBasis(capNormal)
+
+	-- Cut vertices inherit the submesh's fixup rotation, so the cap has to as well
+	local vrotate = cut[1].rotate
+
+	local centroid = Vector()
+	for i = 1, #cut do
+		add(centroid, cut[i].pos)
+	end
+	centroid = centroid / #cut
+
+	local points = {}
+	for i = 1, #cut do
+		local offset = cut[i].pos - centroid
+		points[i] = { pos = cut[i].pos, ang = math.atan2(dot(up, offset), dot(right, offset)) }
+	end
+
+	-- Descending angle winds the fan clockwise as seen from the front face
+	table.sort(points, function(a, b) return a.ang > b.ang end)
+
+	local density = getUV and texelDensity(source)
+
+	local function capVertex(pos)
+		local vert = {
+			pos    = Vector(pos),
+			normal = Vector(capNormal),
+			rotate = vrotate,
+		}
+		if getUV then
+			vert.u = dot(right, pos) * density
+			vert.v = dot(up, pos) * density
+			vert.userdata = tangent
+		end
+		return vert
+	end
+
+	for i = 1, #points do
+		temp[#temp + 1] = capVertex(centroid)
+		temp[#temp + 1] = capVertex(points[i].pos)
+		temp[#temp + 1] = capVertex(points[i == #points and 1 or i + 1].pos)
+	end
+end
+
 -- method https:--github.com/chenchenyuyu/DEMO/blob/b6bf971a302c71403e0e34e091402982dfa3cd2d/app/src/pages/vr/decal/decalGeometry.js#L102
-local function applyClippingPlane(verts, plane, length, getUV)
+local function applyClippingPlane(verts, plane, length, getUV, seal)
 	local temp = {}
+	local cut = seal and {}
 	for i = 1, #verts, 3 do
 		local d1 = length - dot(verts[i + 0].pos, plane)
 		local d2 = length - dot(verts[i + 1].pos, plane)
@@ -260,7 +346,23 @@ local function applyClippingPlane(verts, plane, length, getUV)
 				temp[#temp + 1] = nv3
 			end
 		end
+
+		if cut then
+			-- The plane-crossing pair is nv3/nv4 when one vertex was cut off, nv2/nv3 when two were
+			if total == 1 then
+				cut[#cut + 1] = nv3
+				cut[#cut + 1] = nv4
+			elseif total == 2 then
+				cut[#cut + 1] = nv2
+				cut[#cut + 1] = nv3
+			end
+		end
 	end
+
+	if cut then
+		capClippingPlane(temp, cut, plane, verts, getUV)
+	end
+
 	return temp
 end
 
@@ -324,7 +426,7 @@ local function getVertsFromPrimitive(partnext, meshtex, meshbump, vmins, vmaxs, 
 
 	if partclips then
 		for clipid = 1, #partclips do
-			submeshverts = applyClippingPlane(submeshverts, partclips[clipid].n, partclips[clipid].d, modeluv)
+			submeshverts = applyClippingPlane(submeshverts, partclips[clipid].n, partclips[clipid].d, modeluv, partclips[clipid].seal)
 		end
 	end
 
@@ -435,6 +537,7 @@ local function getVertsFromMDL(partnext, meshtex, meshbump, vmins, vmaxs, direct
 					d  = partclips[clipid].d,
 					no = partclips[clipid].n,
 					n  = normal,
+					seal = partclips[clipid].seal,
 				}
 			end
 			partclips = clips
@@ -502,11 +605,11 @@ local function getVertsFromMDL(partnext, meshtex, meshbump, vmins, vmaxs, direct
 		if partclips then
 			if submeshfix then
 				for clipid = 1, #partclips do
-					submeshverts = applyClippingPlane(submeshverts, submeshfix.diff and partclips[clipid].no or partclips[clipid].n, partclips[clipid].d, modeluv)
+					submeshverts = applyClippingPlane(submeshverts, submeshfix.diff and partclips[clipid].no or partclips[clipid].n, partclips[clipid].d, modeluv, partclips[clipid].seal)
 				end
 			else
 				for clipid = 1, #partclips do
-					submeshverts = applyClippingPlane(submeshverts, partclips[clipid].n, partclips[clipid].d, modeluv)
+					submeshverts = applyClippingPlane(submeshverts, partclips[clipid].n, partclips[clipid].d, modeluv, partclips[clipid].seal)
 				end
 			end
 		end
