@@ -8,6 +8,9 @@
 prop2mesh.primitive = {}
 local addon = prop2mesh.primitive
 
+-- Primitive.minSize, copied rather than read, so this library doesn't need that addon installed
+local MinSize = 0.4
+
 
 -------------------------------
 local bit, math, util, table, isvector, WorldToLocal, LocalToWorld, Vector, Angle =
@@ -233,12 +236,13 @@ do
         @RETURN:
             either a function or a coroutine that will build the mesh
     --]]
-    function addon.construct.generate( construct, param, threaded, physics )
+    function addon.construct.generate( construct, param, threaded, physics, missingname )
         if SERVER then threaded = nil end
 
-        -- Non-existant construct, error model CODE 1
+        -- Non-existant construct, error model CODE 1. Named by the caller, since a construct
+        -- that doesn't exist has no data table to read a name out of.
         if construct == nil then
-            return true, errorModel( 1, name )
+            return true, errorModel( 1, missingname or "NO_NAME" )
         end
 
         construct.data.name = construct.data.name or "NO_NAME"
@@ -271,7 +275,7 @@ do
             either a function or a coroutine that will build the mesh
     --]]
     function addon.construct.get( name, param, threaded, physics )
-        return addon.construct.generate( construct_types[name], param, threaded, physics )
+        return addon.construct.generate( construct_types[name], param, threaded, physics, name )
     end
 end
 
@@ -2867,6 +2871,178 @@ registerType( "ladder", function( param, data, threaded, physics )
     end
 
     util_Transform( model.verts, param.PrimMESHROT, param.PrimMESHPOS, threaded )
+
+    return model
+end )
+
+
+-- PARALLELOGRAM
+-- Ported from the primitive addon. This library is a fork, so a type only the addon knows
+-- about falls through to the error model, and its clips then cut up a 24 unit cube instead.
+registerType( "parallelogram", function( param, data, threaded, physics )
+    local dx = ( isvector( param.PrimSIZE ) and param.PrimSIZE[1] or 1 ) * 0.5
+    local dy = ( isvector( param.PrimSIZE ) and param.PrimSIZE[2] or 1 ) * 0.5
+    local dz = ( isvector( param.PrimSIZE ) and param.PrimSIZE[3] or 1 ) * 0.5
+
+    local shift = tonumber( param.PrimSLANT ) or 0
+
+    local model = simpleton.New()
+    local verts = model.verts
+
+    -- Bottom face at z=-dz is unshifted; all horizontal offset goes to the top face.
+    -- The entity origin sits at the center of the bottom face.
+    model:PushXYZ(  dx,          dy, -dz )  -- 1 bottom y+ x+
+    model:PushXYZ(  dx,         -dy, -dz )  -- 2 bottom y- x+
+    model:PushXYZ( -dx,         -dy, -dz )  -- 3 bottom y- x-
+    model:PushXYZ( -dx,          dy, -dz )  -- 4 bottom y+ x-
+    model:PushXYZ(  dx + shift,  dy,  dz )  -- 5 top y+ x+
+    model:PushXYZ(  dx + shift, -dy,  dz )  -- 6 top y- x+
+    model:PushXYZ( -dx + shift, -dy,  dz )  -- 7 top y- x-
+    model:PushXYZ( -dx + shift,  dy,  dz )  -- 8 top y+ x-
+
+    if CLIENT then
+        model:PushFace( 1, 2, 3, 4 )  -- bottom (-z)
+        model:PushFace( 5, 8, 7, 6 )  -- top (+z)
+        model:PushFace( 1, 4, 8, 5 )  -- y+ side
+        model:PushFace( 2, 6, 7, 3 )  -- y- side
+        model:PushFace( 2, 1, 5, 6 )  -- x+ side (slanted)
+        model:PushFace( 4, 3, 7, 8 )  -- x- side (slanted)
+    end
+
+    if physics then
+        model.convexes = { verts }
+    end
+
+    util_Transform( verts, param.PrimMESHROT, param.PrimMESHPOS, threaded )
+
+    return model
+end )
+
+
+-- DOME_HOLLOW
+-- Ported from the primitive addon, see the note on parallelogram above
+local function pushHollowRings( model, maxseg2, numseg2, maxseg, numseg, dx, dy, dz, idx, idy, idz )
+    for r = 0, numseg2 do
+        local t = math_pi * 0.5 * ( 1 - r / maxseg2 )
+        local sinT, cosT = math_sin( t ), math_cos( t )
+        for v = 0, numseg do
+            local p = math_tau * v / maxseg
+            model:PushXYZ( -dx  * math_cos( p ) * sinT, dy  * math_sin( p ) * sinT, dz  * cosT )  -- outer
+            model:PushXYZ( -idx * math_cos( p ) * sinT, idy * math_sin( p ) * sinT, idz * cosT )  -- inner
+        end
+    end
+end
+
+registerType( "dome_hollow", function( param, data, threaded, physics )
+    local maxseg  = param.PrimMAXSEGH or 1
+    local numseg  = param.PrimNUMSEGH or 1
+    local maxseg2 = param.PrimMAXSEGV or 1
+    local numseg2 = param.PrimNUMSEGV or 1
+
+    -- Legacy subdiv param will always come with these set to 1. Backwards compatibility measure.
+    -- Normally you wouldn't set these anyways (degenerate cases)
+    if maxseg == 1 and numseg == 1 and maxseg2 == 1 and numseg2 == 1 then
+        local subdiv = math_clamp( 2 * math_round( ( param.PrimSUBDIV or 8 ) / 2 ), 4, 32 )
+        maxseg, numseg = subdiv, subdiv
+        maxseg2, numseg2 = subdiv / 2, subdiv / 2
+    end
+
+    -- Horizontal (longitude) arc: numseg of maxseg segments around the full 360 degrees.
+    maxseg = math_clamp( maxseg, 1, 16 )
+    numseg = math_clamp( numseg, 1, maxseg )
+
+    -- Vertical (latitude) arc: numseg2 of maxseg2 segments over the 90 degrees from equator to apex.
+    maxseg2 = math_clamp( maxseg2, 1, 8 )
+    numseg2 = math_clamp( numseg2, 1, maxseg2 )
+
+    local dx = ( isvector( param.PrimSIZE ) and param.PrimSIZE[1] or 1 ) * 0.5
+    local dy = ( isvector( param.PrimSIZE ) and param.PrimSIZE[2] or 1 ) * 0.5
+    local dz = ( isvector( param.PrimSIZE ) and param.PrimSIZE[3] or 1 ) * 0.5
+    local dt = math_max( math_min( param.PrimDT or 1, dx - MinSize, dy - MinSize, dz - MinSize ), MinSize )
+
+    local idx = dx - dt
+    local idy = dy - dt
+    local idz = dz - dt
+
+    local ringSize = numseg + 1     -- verts per ring: numseg segments need numseg+1 verts to span the arc
+    local twoRing  = ringSize * 2   -- stride per ring in interleaved layout
+
+    local model = simpleton.New()
+
+    if CLIENT then
+        pushHollowRings( model, maxseg2, numseg2, maxseg, numseg, dx, dy, dz, idx, idy, idz )
+
+        -- Emit quad strips between adjacent rings. Each ring occupies twoRing slots,
+        -- so adding twoRing to an index moves to the same position one ring toward the apex.
+        for r = 1, numseg2 do
+            for v = 0, numseg - 1 do
+                local a = 1 + ( r - 1 ) * twoRing + v * 2  -- bottom-left outer
+                local d = a + twoRing                       -- top-left outer
+                model:PushFace( d, d + 2, a + 2, a )           -- outer, outward normals
+                model:PushFace( a + 1, a + 3, d + 3, d + 1 )  -- inner, inward normals
+            end
+        end
+
+        -- Close the open bottom edge with a ring of rim quads connecting outer equator to inner equator.
+        for v = 0, numseg - 1 do
+            local ao = 1 + v * 2
+            model:PushFace( ao, ao + 2, ao + 3, ao + 1 )  -- rim, downward normals
+        end
+
+        -- A partial vertical arc stops short of the apex, so close that ring too.
+        if numseg2 ~= maxseg2 then
+            local top = 1 + numseg2 * twoRing
+            for v = 0, numseg - 1 do
+                local ao = top + v * 2
+                model:PushFace( ao + 1, ao + 3, ao + 2, ao )  -- cap, upward normals
+            end
+        end
+
+        -- When the arc is partial, cap the two cut edges with wall quads spanning outer to inner.
+        if numseg ~= maxseg then
+            for r = 1, numseg2 do
+                local aStart = 1 + ( r - 1 ) * twoRing
+                local dStart = aStart + twoRing
+                model:PushFace( aStart, aStart + 1, dStart + 1, dStart )
+
+                local aEnd = aStart + numseg * 2
+                local dEnd = aEnd + twoRing
+                model:PushFace( aEnd, dEnd, dEnd + 1, aEnd + 1 )
+            end
+        end
+
+        util_Transform( model.verts, param.PrimMESHROT, param.PrimMESHPOS, threaded )
+    end
+
+    if physics then
+        -- Limit physics to 8 * 4 = 32 convexes at most.
+        local physMaxseg  = math_min( maxseg, 8 )
+        local physNumseg  = math_max( math_round( numseg * physMaxseg / maxseg ), 1 )
+        local physMaxseg2 = math_min( maxseg2, 4 )
+        local physNumseg2 = math_max( math_round( numseg2 * physMaxseg2 / maxseg2 ), 1 )
+        local physTwoRing = ( physNumseg + 1 ) * 2
+        local physModel   = simpleton.New()
+        local physVerts   = physModel.verts
+
+        pushHollowRings( physModel, physMaxseg2, physNumseg2, physMaxseg, physNumseg, dx, dy, dz, idx, idy, idz )
+
+        -- One convex per patch: four outer corners + four inner corners of each wall quad.
+        -- This approximates the hollow shell as a set of thin wedge-shaped convex hulls.
+        local convexes = {}
+        for r = 0, physNumseg2 - 1 do
+            for v = 0, physNumseg - 1 do
+                local oa = 1 + r * physTwoRing + v * 2  -- bottom-left outer
+                local od = oa + physTwoRing             -- top-left outer
+                convexes[#convexes + 1] = {
+                    physVerts[oa],     physVerts[oa + 2], physVerts[od],     physVerts[od + 2],  -- outer quad corners
+                    physVerts[oa + 1], physVerts[oa + 3], physVerts[od + 1], physVerts[od + 3],  -- inner quad corners
+                }
+            end
+        end
+
+        model.convexes = convexes
+        util_Transform( physVerts, param.PrimMESHROT, param.PrimMESHPOS, threaded )
+    end
 
     return model
 end )
