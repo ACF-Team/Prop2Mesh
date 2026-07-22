@@ -269,6 +269,11 @@ end
 
 ]]
 local function getVertsFromPrimitive(partnext, meshtex, meshbump, vmins, vmaxs, direct)
+    -- primitive parts are only supported when the primitive addon is installed
+    if not prop2mesh.primitive then
+        return
+    end
+
     partnext.primitive.skip_bounds = true
     partnext.primitive.skip_tangents = true
     partnext.primitive.skip_inside = true
