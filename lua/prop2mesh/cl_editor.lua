@@ -1654,7 +1654,7 @@ local function onPartHover(label)
 					self.Ghost:DisableMatrix("RenderMultiply")
 				end
 
-			elseif partnode.new.primitive then
+			elseif partnode.new.primitive and prop2mesh.primitive then
 				self.Ghost.GetRenderMesh = nil
 				if self.Ghost.RenderMesh then
 					self.Ghost.RenderMesh:Destroy()
