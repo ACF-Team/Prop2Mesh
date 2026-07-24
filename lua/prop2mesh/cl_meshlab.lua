@@ -205,8 +205,7 @@ local function texelDensity(verts)
 	return math.sqrt(uvArea / worldArea)
 end
 
--- Seals the hole a clip opened by fanning the cut points around their centroid. Convex
--- cross-sections only; a concave cut will fan across its own concavity.
+-- Seals the hole a clip opened by fanning the cut points around their centroid.
 local function capClippingPlane(temp, cut, plane, source, getUV)
 	if #cut < 3 then
 		return

@@ -93,10 +93,15 @@ local function improved_clips(part, ent)
 		return
 	end
 
+	-- Multiconvex seals rejected, since the hole will be concave and a physical face is implied where there is none.
+	local seal = true
+	local phys = ent:GetPhysicsObject()
+	if IsValid(phys) then seal = #phys:GetMeshConvexes() <= 1 end
+
 	local pclips = part.clips or {}
 	for i = 1, #clips do
 		local clip = clips[i]
-		pclips[#pclips + 1] = { n = clip.Normal, d = clip.Distance, seal = clip.Seal ~= false or nil }
+		pclips[#pclips + 1] = { n = clip.Normal, d = clip.Distance, seal = seal and clip.Seal ~= false or nil }
 	end
 
 	part.clips = pclips
