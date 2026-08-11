@@ -113,6 +113,14 @@ end)
 
 
 local allow_disable = GetConVar("prop2mesh_disable_allowed")
+local function plyDisabledP2m(pl)
+	if not allow_disable:GetBool() then
+		return false
+	end
+
+	return tobool(pl:GetInfoNum("prop2mesh_disable", 0))
+end
+
 function prop2mesh.sendDownload(pl, self, crc)
     net.Start("prop2mesh_download")
     net.WriteString(crc)
@@ -120,8 +128,21 @@ function prop2mesh.sendDownload(pl, self, crc)
     net.Send(pl)
 end
 
+function prop2mesh.sendToInterested(plys)
+	plys = plys or player.GetAll()
+	local recipients = RecipientFilter()
+
+	for _, pl in ipairs(plys) do
+		if not plyDisabledP2m(pl) then
+			recipients:AddPlayer(pl)
+		end
+	end
+
+	net.Send(recipients)
+end
+
 net.Receive("prop2mesh_download", function(len, pl)
-	if allow_disable:GetBool() and tobool(pl:GetInfoNum("prop2mesh_disable", 0)) then return end
+	if plyDisabledP2m(pl) then return end
 
 	local self = net.ReadEntity()
 	if not prop2mesh.isValid(self) then
@@ -224,7 +245,7 @@ function ENT:Think()
 			end
 
 			net.WriteTable(self.prop2mesh_updates)
-			net.Broadcast()
+			prop2mesh.sendToInterested()
 
 			self.prop2mesh_updates = nil
 		else
@@ -318,7 +339,7 @@ function ENT:RemoveController(index)
 	table.remove(self.prop2mesh_controllers, index)
 
 	local keepdata
-	for k, info in pairs(self.prop2mesh_controllers) do
+	for _, info in pairs(self.prop2mesh_controllers) do
 		if info.crc == crc then
 			keepdata = true
 			break
@@ -495,11 +516,7 @@ function ENT:SendControllers(syncwith)
 		end
 	end
 
-	if syncwith then
-		net.Send(syncwith)
-	else
-		net.Broadcast()
-	end
+	prop2mesh.sendToInterested(syncwith)
 end
 
 function ENT:AddControllerUpdate(index, key)
