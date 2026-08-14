@@ -537,6 +537,16 @@ function ENT:SetControllerLinkPos(index, val)
 	end
 end
 
+function ENT:GetControllerLinkPos(index)
+	local info = self.prop2mesh_controllers[index]
+	if not info then return end
+
+	local linkpos = info.linkpos
+	if not linkpos then return Vector() end
+
+	return Vector(linkpos.x, linkpos.y, linkpos.z)
+end
+
 function ENT:SetControllerLinkAng(index, val)
 	local info = self.prop2mesh_controllers[index]
 	if (info and isangle(val)) then
@@ -550,6 +560,16 @@ function ENT:SetControllerLinkAng(index, val)
 			self:AddControllerUpdate(index, "linkang")
 		end
 	end
+end
+
+function ENT:GetControllerLinkAng(index)
+	local info = self.prop2mesh_controllers[index]
+	if not info then return end
+
+	local linkang = info.linkang
+	if not linkang then return Angle() end
+
+	return Angle(linkang.p, linkang.y, linkang.r)
 end
 
 function ENT:SetControllerName(index, val)

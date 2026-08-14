@@ -37,6 +37,7 @@ local Ent_SetColor = entMeta.SetColor
 local Ent_GetTable = entMeta.GetTable
 local Ent_DrawModel = entMeta.DrawModel
 local Ent_GetAngles = entMeta.GetAngles
+local Ent_GetParent = entMeta.GetParent
 local Ent_SetParent = entMeta.SetParent
 local Ent_SetAngles = entMeta.SetAngles
 local Ent_SetMaterial = entMeta.SetMaterial
@@ -396,6 +397,39 @@ local function drawMesh(self)
 	return meshes and meshes.basic or empty
 end
 
+local function refreshSetColor(infoEnt, col)
+	local isOpaque = col.a == 255
+
+	Ent_SetColor(infoEnt, col)
+	Ent_SetRenderMode(infoEnt, isOpaque and RENDERMODE_NORMAL or RENDERMODE_TRANSCOLOR)
+	infoEnt.RenderGroup = isOpaque and RENDERGROUP_OPAQUE or RENDERGROUP_BOTH
+end
+
+local function refreshSetScale(infoEnt, scale)
+	if scale.x ~= 1 or scale.y ~= 1 or scale.z ~= 1 then
+		local matrix = Matrix()
+		matrix:SetScale(scale)
+		Ent_EnableMatrix(infoEnt, "RenderMultiply", matrix)
+		infoEnt.scale = scale
+	else
+		Ent_DisableMatrix(infoEnt, "RenderMultiply")
+		infoEnt.scale = nil
+	end
+end
+
+local function refreshSetPosAng(infoEnt, info, p2mEnt)
+	local linkEnt = info.linkent
+	local parent = IsValid(linkEnt) and linkEnt or p2mEnt
+	local pos, ang = LocalToWorld(info.linkpos or vecZero, info.linkang or angZero, Ent_GetPos(parent), Ent_GetAngles(parent))
+
+	if parent ~= Ent_GetParent(infoEnt) then
+		Ent_SetParent(infoEnt, parent)
+	end
+
+	Ent_SetPos(infoEnt, pos)
+	Ent_SetAngles(infoEnt, ang)
+end
+
 local function refresh(self, info)
 	local infoEnt = info.ent
 
@@ -411,33 +445,12 @@ local function refresh(self, info)
 		info.ent = infoEnt
 	end
 
-	local linkEnt = info.linkent
-	local parent = IsValid(linkEnt) and linkEnt or self
-	local pos, ang = LocalToWorld(info.linkpos or vecZero, info.linkang or angZero, Ent_GetPos(parent), Ent_GetAngles(parent))
-
-	Ent_SetParent(infoEnt, parent)
-	Ent_SetAngles(infoEnt, ang)
-	Ent_SetPos(infoEnt, pos)
-
 	local infoEntTable = Ent_GetTable(infoEnt)
-	local infoCol = info.col
-	local isOpaque = infoCol.a == 255
 
 	Ent_SetMaterial(infoEnt, info.mat)
-	Ent_SetColor(infoEnt, infoCol)
-	Ent_SetRenderMode(infoEnt, isOpaque and RENDERMODE_NORMAL or RENDERMODE_TRANSCOLOR)
-	infoEntTable.RenderGroup = isOpaque and RENDERGROUP_OPAQUE or RENDERGROUP_BOTH
-
-	local infoScale = info.scale
-	if infoScale.x ~= 1 or infoScale.y ~= 1 or infoScale.z ~= 1 then
-		local matrix = Matrix()
-		matrix:SetScale(infoScale)
-		Ent_EnableMatrix(infoEnt, "RenderMultiply", matrix)
-		infoEnt.scale = info.scale
-	else
-		Ent_DisableMatrix(infoEnt, "RenderMultiply")
-		infoEnt.scale = nil
-	end
+	refreshSetColor(infoEnt, info.col)
+	refreshSetScale(infoEnt, info.scale)
+	refreshSetPosAng(infoEnt, info, self)
 
 	local infoCrc = info.crc
 	local infoUniqueID = info.uniqueID
@@ -583,10 +596,72 @@ function ENT:GetDownloadProgress()
 end
 
 
+local kvpass = {}
+local function applyPropertyWithKVPass(ent, index, key, val)
+	local info = ent.prop2mesh_controllers[index]
+	if not info then return end
+
+	local pass = kvpass[key]
+
+	if pass then
+		pass(self, info, val)
+		val = info[key] -- Get the modified result
+	else
+		info[key] = val
+	end
+
+	return val, info.ent
+end
+
+function ENT:SetControllerCol(index, col)
+	local infoEnt
+	col, infoEnt = applyPropertyWithKVPass(self, index, "col", col)
+	if col == nil then return end
+	if not IsValid(infoEnt) then return end
+
+	refreshSetColor(infoEnt, col)
+end
+
+function ENT:SetControllerPos(index, linkpos)
+	local infoEnt
+	linkpos, infoEnt = applyPropertyWithKVPass(self, index, "linkpos", linkpos)
+	if linkpos == nil then return end
+	if not IsValid(infoEnt) then return end
+
+	refreshSetPosAng(infoEnt, self.prop2mesh_controllers[index], self)
+end
+
+function ENT:SetControllerAng(index, linkang)
+	local infoEnt
+	linkang, infoEnt = applyPropertyWithKVPass(self, index, "linkang", linkang)
+	if linkang == nil then return end
+	if not IsValid(infoEnt) then return end
+
+	refreshSetPosAng(infoEnt, self.prop2mesh_controllers[index], self)
+end
+
+function ENT:SetControllerMat(index, mat)
+	local infoEnt
+	mat, infoEnt = applyPropertyWithKVPass(self, index, "mat", mat)
+	if mat == nil then return end
+	if not IsValid(infoEnt) then return end
+
+	Ent_SetMaterial(infoEnt, mat)
+end
+
+function ENT:SetControllerScale(index, scale)
+	local infoEnt
+	scale, infoEnt = applyPropertyWithKVPass(self, index, "scale", scale)
+	if scale == nil then return end
+	if not IsValid(infoEnt) then return end
+
+	refreshSetScale(infoEnt, scale)
+end
+
+
 --[[
 
 ]]
-local kvpass = {}
 kvpass.crc = function(self, info, val)
 	local crc = info.crc
 	info.crc = val
@@ -667,7 +742,8 @@ kvpass.mat = function(self, info, val)
 end
 
 kvpass.scale = function(self, info, val)
-	info.scale = Vector(unpack(val))
+	if type(val) == "table" then val = Vector(unpack(val)) end
+	info.scale = val
 end
 
 kvpass.clips = function(self, info, val)
