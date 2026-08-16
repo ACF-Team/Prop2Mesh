@@ -8,11 +8,8 @@
 -- two places, and means prop2mesh only supports primitive parts when the addon that
 -- actually creates them is present.
 --
--- The primitive addon defines its Primitive global before prop2mesh loads ( autorun
--- files include alphabetically, and "primitive" sorts before "prop2mesh" ), so the
--- alias below is populated whenever the addon is installed. All prop2mesh code that
--- touches primitives must nil-check prop2mesh.primitive first, since it stays nil
--- when the addon is absent.
+-- If Primitives loads after prop2mesh (might not happen due to legacy addon sorting (pri before pro)
+-- but still), then the global table Primitive is not available at this point. This is just for safety.
 -------------------------------
 
-prop2mesh.primitive = Primitive
+prop2mesh.primitive = setmetatable({}, {__index = function(_, key) return Primitive[key] end})
