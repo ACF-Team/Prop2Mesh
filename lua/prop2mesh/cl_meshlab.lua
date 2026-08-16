@@ -284,16 +284,11 @@ local function getVertsFromPrimitive(partnext, meshtex, meshbump, vmins, vmaxs, 
 		partnext.primitive.skip_normals = true
 	end
 
-	-- ImprovedClipping clips are applied by the construct itself (simpleton:ApplyClips),
-	-- so cuts and seal caps use the same geometry the live primitive shows. Legacy clips
-	-- stay on the applyClippingPlane path below.
-	local iclips
-	if partnext.iclips then
-		iclips = {}
-		for clipid = 1, #partnext.iclips do
-			local pclip = partnext.iclips[clipid]
-			iclips[#iclips + 1] = { Normal = Vector(pclip.n), Distance = pclip.d, Seal = pclip.s }
-		end
+	-- ImprovedClipping clips are applied by the construct itself (simpleton:ApplyClips).
+	-- Legacy clips (e.g. PropperClipping) stay on the applyClippingPlane path below.
+	local iclips = {}
+	for _, pclip in ipairs(partnext.iclips or {}) do
+		iclips[#iclips + 1] = { Normal = Vector(pclip.n), Distance = pclip.d, Seal = pclip.s }
 	end
 
 	local _, submeshes = prop2mesh.primitive.construct.get(partnext.primitive.construct, partnext.primitive, false, false, iclips)
@@ -419,19 +414,13 @@ local function getVertsFromMDL(partnext, meshtex, meshbump, vmins, vmaxs, direct
 	local partscale = partnext.scale
 	--local partsubmodels = partnext.submodels
 
-	-- ImprovedClipping clips use the same plane convention as legacy clips; seal caps
-	-- can't be rebuilt for arbitrary models, so they apply as plain cuts here.
+	-- ImprovedClipping clips use the same plane convention as legacy clips.
+	-- But sealing support is dropped.
 	local partclips = partnext.clips
 	if partnext.iclips then
 		local merged = {}
-		if partclips then
-			for clipid = 1, #partclips do
-				merged[#merged + 1] = partclips[clipid]
-			end
-		end
-		for clipid = 1, #partnext.iclips do
-			merged[#merged + 1] = partnext.iclips[clipid]
-		end
+		table.Add(merged, partclips or {})
+		table.Add(merged, partnext.iclips)
 		partclips = merged
 	end
 
