@@ -604,7 +604,7 @@ local function applyPropertyWithKVPass(ent, index, key, val)
 	local pass = kvpass[key]
 
 	if pass then
-		pass(self, info, val)
+		pass(ent, info, val)
 		val = info[key] -- Get the modified result
 	else
 		info[key] = val
