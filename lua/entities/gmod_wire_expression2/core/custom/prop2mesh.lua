@@ -461,14 +461,16 @@ e2function vector entity:p2mGetPos(index)
 		return Vector(0,0,0)
 	end
 	local linkpos = this.prop2mesh_controllers[index].linkpos
-	return linkpos or Vector(0,0,0)
+	if not linkpos then return Vector(0,0,0) end
+	return Vector(linkpos.x, linkpos.y, linkpos.z)
 end
 e2function angle entity:p2mGetAng(index)
 	if not checkvalid(self, this, nil, index, nil) then
 		return Angle(0,0,0)
 	end
 	local linkang = this.prop2mesh_controllers[index].linkang
-	return linkang or Angle(0,0,0)
+	if not linkang then return Angle(0,0,0) end
+	return Angle(linkang.p, linkang.y, linkang.r)
 end
 e2function string entity:p2mGetMaterial(index)
 	if not checkvalid(self, this, nil, index, nil) then
