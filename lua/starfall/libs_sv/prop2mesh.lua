@@ -23,6 +23,7 @@ local _BUILD  = -10
 local _ALPHA  = -11
 local _LINK   = -12
 local _BUMP   = -13
+local _NAME   = -14
 
 local cooldowns = {}
 cooldowns[_BUILD] = 10
@@ -140,6 +141,7 @@ return function( instance )
     local CheckType = instance.CheckType
     local p2m_library = instance.Libraries.p2m
     local owrap, ounwrap = instance.WrapObject, instance.UnwrapObject
+    local ents_metatable = instance.Types.Entity
     local ents_methods, wrap, unwrap = instance.Types.Entity.Methods, instance.Types.Entity.Wrap, instance.Types.Entity.Unwrap
     local ang_meta, aunwrap = instance.Types.Angle, instance.Types.Angle.Unwrap
     local vec_meta, vunwrap = instance.Types.Vector, instance.Types.Vector.Unwrap
@@ -194,12 +196,58 @@ return function( instance )
         local swap = {}
         for i = 1, #submodels do
             local n = isnumber( submodels[i] ) and math.floor( math.abs( submodels[i] ) )
-            if n > 0 then
+            if n and n > 0 then
                 swap[n] = 1
             end
         end
 
         return next( swap ) and swap
+    end
+
+    local MAX_OBJ_VERTS = 63999
+
+    -- Server-side equivalent of the editor's formatOBJ: keeps only v/f lines and triangulates faces.
+    local function formatOBJ( text )
+        local out, vcount = {}, 0
+
+        for line in string.gmatch( text .. "\n", "(.-)\r?\n" ) do
+            local head, rest = string.match( line, "^%s*(%a+)%s+(.*)" )
+
+            if head == "v" then
+                local x, y, z = string.match( rest, "(%S+)%s+(%S+)%s+(%S+)" )
+                x, y, z = tonumber( x ), tonumber( y ), tonumber( z )
+                if not ( x and y and z ) then
+                    return nil, "malformed vertex"
+                end
+
+                vcount = vcount + 1
+                if vcount > MAX_OBJ_VERTS then
+                    return nil, ".obj must have fewer than 64000 vertices"
+                end
+
+                x = math.abs( x ) < 1e-4 and 0 or x
+                y = math.abs( y ) < 1e-4 and 0 or y
+                z = math.abs( z ) < 1e-4 and 0 or z
+                out[#out + 1] = string.format( "v %s %s %s\n", x, y, z )
+            elseif head == "f" then
+                local idx = {}
+                for token in string.gmatch( rest, "%S+" ) do
+                    idx[#idx + 1] = tonumber( string.match( token, "^-?%d+" ) )
+                    if not idx[#idx] then
+                        return nil, "malformed face"
+                    end
+                end
+                for i = 3, #idx do
+                    out[#out + 1] = string.format( "f %d %d %d\n", idx[1], idx[i - 1], idx[i] )
+                end
+            end
+        end
+
+        if vcount == 0 then
+            return nil, "no vertices found in .obj"
+        end
+
+        return table.concat( out )
     end
 
     local MAX_CONTROLLERS = 64
@@ -211,9 +259,17 @@ return function( instance )
     -- @param number? uvs The uvscale to give the p2m controllers
     -- @param Vector? scale The meshscale to give the p2m controllers
     -- @param boolean? bump Enable bumpmaps on the p2m controllers
+    -- @param string? model Gives the p2m ent a visible, frozen, solid model. If omitted the ent is invisible and non-solid
     -- @return The p2m ent
-    function p2m_library.create( count, pos, ang, uvs, scale, bump )
+    function p2m_library.create( count, pos, ang, uvs, scale, bump, model )
         CheckLuaType( count, TYPE_NUMBER )
+
+        if model ~= nil then
+            CheckLuaType( model, TYPE_STRING )
+            if not util.IsValidModel( model ) then
+                SF.Throw( "Invalid model: " .. model, 2 )
+            end
+        end
 
         local count = math.abs( math.ceil( count or 1 ) )
         if count > MAX_CONTROLLERS then
@@ -229,8 +285,8 @@ return function( instance )
 
         local ent = ents.Create( "sent_prop2mesh" )
 
-        ent:SetNoDraw( true )
-        ent:SetModel( "models/hunter/plates/plate.mdl" )
+        ent:SetNoDraw( not model )
+        ent:SetModel( model or "models/hunter/plates/plate.mdl" )
         ent:SetPos( SF.clampPos( pos ) )
         ent:SetAngles( ang )
         ent:Spawn()
@@ -247,14 +303,21 @@ return function( instance )
         if ply.AddCount then ply:AddCount( "prop2mesh", ent ) end
 
         ent:SetPlayer( ply )
-        ent:SetSolid( SOLID_NONE )
-        ent:SetMoveType( MOVETYPE_NONE )
+        if model then
+            local phys = ent:GetPhysicsObject()
+            if IsValid( phys ) then
+                phys:EnableMotion( false )
+            end
+        else
+            ent:SetSolid( SOLID_NONE )
+            ent:SetMoveType( MOVETYPE_NONE )
+        end
         ent:DrawShadow( false )
         ent:Activate()
 
         ent:CallOnRemove( "starfall_p2m_delete", p2mOnDestroy, p2mdata, ply )
 
-        ent.DoNotDuplicate = true
+        ent.DoNotDuplicate = not model
         ent.prop2mesh_sf_resevoir = {}
 
         if uvs ~= nil then
@@ -370,6 +433,89 @@ return function( instance )
             submodels = submodels,
             submodelswl = tobool( submodelswl ) and 1 or nil,
         }
+    end
+
+    --- Adds an .obj mesh to the build stack.
+    -- @param number index index of controller
+    -- @param string name display name of the part
+    -- @param string obj contents of the .obj file (limited to 63999 vertices)
+    -- @param Vector pos local pos offset
+    -- @param Angle ang local ang offset
+    -- @param Vector? scale mesh scale
+    -- @param number? smooth smoothing angle in degrees (0-180), 0 or nil for none
+    -- @param boolean? vinvert flip normals
+    -- @param boolean? vinside render inside
+    function ents_methods:p2mPushObj( index, name, obj, pos, ang, scale, smooth, vinvert, vinside )
+        CheckType( self, ents_metatable )
+        local ent = unwrap( self )
+
+        CheckLuaType( index, TYPE_NUMBER )
+
+        if not checkValid( instance.player, ent, nil, index, true ) then
+            return
+        end
+
+        errorcheck( ent, index )
+
+        CheckLuaType( name, TYPE_STRING )
+        CheckLuaType( obj, TYPE_STRING )
+
+        local formatted, err = formatOBJ( obj )
+        if not formatted then
+            SF.Throw( err, 2 )
+        end
+
+        local pos = vunwrap( pos )
+        local ang = aunwrap( ang )
+
+        if scale then
+            scale = vunwrap( scale )
+            if scale.x == 1 and scale.y == 1 and scale.z == 1 then
+                scale = nil
+            end
+        end
+
+        if smooth then
+            CheckLuaType( smooth, TYPE_NUMBER )
+            smooth = math.Clamp( smooth, 0, 180 )
+            if smooth == 0 then
+                smooth = nil
+            end
+        end
+
+        local resevoir = ent.prop2mesh_sf_resevoir[index]
+        local crc = util.CRC( formatted )
+
+        resevoir.custom = resevoir.custom or {}
+        resevoir.custom[crc] = formatted
+
+        resevoir[#resevoir + 1] = {
+            objd = crc,
+            objn = string.sub( name, 1, 64 ),
+            pos = pos,
+            ang = ang,
+            scale = scale,
+            vsmooth = smooth,
+            vinvert = tobool( vinvert ) and 1 or nil,
+            vinside = tobool( vinside ) and 1 or nil,
+        }
+    end
+
+    --- Sets the name of the controller
+    -- @param number index
+    -- @param string name
+    function ents_methods:p2mSetName( index, name )
+        CheckType( self, ents_metatable )
+        local ent = unwrap( self )
+
+        CheckLuaType( index, TYPE_NUMBER )
+        CheckLuaType( name, TYPE_STRING )
+
+        if not checkValid( instance.player, ent, _NAME, index, nil ) then
+            return
+        end
+
+        ent:SetControllerName( index, string.sub( name, 1, 64 ) )
     end
 
     --- Build the model stack.
