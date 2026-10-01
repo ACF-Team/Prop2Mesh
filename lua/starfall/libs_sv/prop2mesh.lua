@@ -205,18 +205,44 @@ return function( instance )
     end
 
     local MAX_OBJ_VERTS = 63999
+    local MAX_OBJ_TRIS  = 4 * MAX_OBJ_VERTS
+    local MAX_OBJ_BYTES = 8 * 1024 * 1024
+    local MAX_OBJ_LINE  = 4096
+
+    local function isfinite( n )
+        return n == n and n ~= math.huge and n ~= -math.huge
+    end
 
     -- Server-side equivalent of the editor's formatOBJ: keeps only v/f lines and triangulates faces.
+    -- Avoids backtracking patterns; caps bound the work on untrusted input.
     local function formatOBJ( text )
-        local out, vcount = {}, 0
+        local len = #text
+        if len > MAX_OBJ_BYTES then
+            return nil, ".obj is too large"
+        end
 
-        for line in string.gmatch( text .. "\n", "(.-)\r?\n" ) do
-            local head, rest = string.match( line, "^%s*(%a+)%s+(.*)" )
+        local out, vcount, tcount = {}, 0, 0
+        local pos = 1
 
+        while pos <= len do
+            local stop = string.find( text, "\n", pos, true ) or len + 1
+            if stop - pos > MAX_OBJ_LINE then
+                return nil, ".obj line is too long"
+            end
+
+            local line = string.sub( text, pos, stop - 1 )
+            pos = stop + 1
+
+            local tokens, n = {}, 0
+            for token in string.gmatch( line, "%S+" ) do
+                n = n + 1
+                tokens[n] = token
+            end
+
+            local head = tokens[1]
             if head == "v" then
-                local x, y, z = string.match( rest, "(%S+)%s+(%S+)%s+(%S+)" )
-                x, y, z = tonumber( x ), tonumber( y ), tonumber( z )
-                if not ( x and y and z ) then
+                local x, y, z = tonumber( tokens[2] ), tonumber( tokens[3] ), tonumber( tokens[4] )
+                if not ( x and y and z and isfinite( x ) and isfinite( y ) and isfinite( z ) ) then
                     return nil, "malformed vertex"
                 end
 
@@ -231,12 +257,18 @@ return function( instance )
                 out[#out + 1] = string.format( "v %s %s %s\n", x, y, z )
             elseif head == "f" then
                 local idx = {}
-                for token in string.gmatch( rest, "%S+" ) do
-                    idx[#idx + 1] = tonumber( string.match( token, "^-?%d+" ) )
-                    if not idx[#idx] then
+                for i = 2, n do
+                    idx[i - 1] = tonumber( string.match( tokens[i], "^-?%d+" ) )
+                    if not idx[i - 1] then
                         return nil, "malformed face"
                     end
                 end
+
+                tcount = tcount + math.max( #idx - 2, 0 )
+                if tcount > MAX_OBJ_TRIS then
+                    return nil, ".obj must have fewer than " .. ( MAX_OBJ_TRIS + 1 ) .. " triangles"
+                end
+
                 for i = 3, #idx do
                     out[#out + 1] = string.format( "f %d %d %d\n", idx[1], idx[i - 1], idx[i] )
                 end
