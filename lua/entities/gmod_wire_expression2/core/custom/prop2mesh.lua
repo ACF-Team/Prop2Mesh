@@ -453,13 +453,30 @@ e2function vector4 entity:p2mGetColor(index)
 		return {255,255,255,255}
 	end
 	local info = this.prop2mesh_controllers[index]
-	return {info.col.r, info.col.g, info.col.b, info.col.a}
+	local col = info.col or color_white
+	return {col.r, col.g, col.b, col.a}
+end
+e2function vector entity:p2mGetPos(index)
+	if not checkvalid(self, this, nil, index, nil) then
+		return Vector(0,0,0)
+	end
+	local linkpos = this.prop2mesh_controllers[index].linkpos
+	if not linkpos then return Vector(0,0,0) end
+	return Vector(linkpos.x, linkpos.y, linkpos.z)
+end
+e2function angle entity:p2mGetAng(index)
+	if not checkvalid(self, this, nil, index, nil) then
+		return Angle(0,0,0)
+	end
+	local linkang = this.prop2mesh_controllers[index].linkang
+	if not linkang then return Angle(0,0,0) end
+	return Angle(linkang.p, linkang.y, linkang.r)
 end
 e2function string entity:p2mGetMaterial(index)
 	if not checkvalid(self, this, nil, index, nil) then
 		return ""
 	end
-	return this.prop2mesh_controllers[index].mat
+	return this.prop2mesh_controllers[index].mat or ""
 end
 e2function string entity:p2mGetName(index)
 	if not checkvalid(self, this, nil, index, nil) then
