@@ -152,7 +152,7 @@ local function applyUpdate(self, pl, updateHandler)
 		end
 	end
 
-	self:SetNetworkedBool("uploading", true)
+	self:SetUploading(true)
 	for controllerID, data in pairs(updateHandler.dataAltered) do
 		self:SetControllerData(controllerID, data)
 	end
@@ -524,7 +524,7 @@ net.Receive("prop2mesh_upload_start", function(len, pl)
 
 	if not next(add) then
 		if next(set) or next(mod) then
-			self:SetNetworkedBool("uploading", true)
+			self:SetUploading(true)
 
 			for index, updates in pairs(set) do
 				if updates.uvs then
@@ -609,7 +609,7 @@ net.Receive("prop2mesh_upload_start", function(len, pl)
 		net.Send(pl)
 
 	elseif next(uploadReady) then
-		self:SetNetworkedBool("uploading", true)
+		self:SetUploading(true)
 
 		self.prop2mesh_upload_queue = uploadQueue
 		self.prop2mesh_upload_ready = uploadReady
