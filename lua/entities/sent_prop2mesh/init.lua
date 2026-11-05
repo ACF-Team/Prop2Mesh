@@ -180,7 +180,7 @@ end
 
 function ENT:Think()
 	if self.prop2mesh_upload_queue then
-		self:SetNetworkedBool("uploading", true)
+		self:SetUploading(true)
 		return
 	end
 
@@ -228,9 +228,7 @@ function ENT:Think()
 
 			self.prop2mesh_updates = nil
 		else
-			if self:GetNetworkedBool("uploading") then
-				self:SetNetworkedBool("uploading", false)
-			end
+			self:SetUploading(false)
 		end
 	end
 end

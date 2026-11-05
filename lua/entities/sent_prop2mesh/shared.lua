@@ -14,6 +14,10 @@ if SERVER then
 	util.AddNetworkString("prop2mesh_export")
 end
 
+function ENT:SetupDataTables()
+	self:NetworkVar("Bool", 0, "Uploading")
+end
+
 function ENT:GetControllerCol(index)
 	return self.prop2mesh_controllers[index] and self.prop2mesh_controllers[index].col
 end

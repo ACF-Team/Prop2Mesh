@@ -1594,7 +1594,7 @@ function PANEL:Think()
 		return
 	end
 
-	if self.Entity:GetNetworkedBool("uploading", false) then
+	if self.Entity:GetUploading() then
 		if not self.disable or not self.contree:GetDisabled() then
 			self.disable = true
 			self.contree:SetDisabled(true)
