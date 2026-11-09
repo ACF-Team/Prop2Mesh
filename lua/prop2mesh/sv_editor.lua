@@ -70,6 +70,11 @@ local safePartValues = {
 			partlist[partID].vinvert = val ~= 0 and 1 or nil
 		end
 	end,
+	custom_uvs = function(partlist, partID, val)
+		if isnumber(val) then
+			partlist[partID].custom_uvs = val ~= 0 and 1 or nil
+		end
+	end,
 	vinside = function(partlist, partID, val)
 		if isnumber(val) then
 			partlist[partID].vinside = val ~= 0 and 1 or nil

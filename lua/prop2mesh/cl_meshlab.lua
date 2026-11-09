@@ -728,7 +728,7 @@ local function getFace(modelobj, i)
 	return i, face
 end
 
-addHeaderFunction("f", function(modelobj, i, vmesh, vlook, vmins, vmaxs, pos, ang, scale, invert, meshtex)
+addHeaderFunction("f", function(modelobj, i, vmesh, vlook, vmins, vmaxs, pos, ang, scale, invert, meshtex, vtlook, custom_uvs)
 	local f1, f2
 	i, f1 = getFace(modelobj, i) if not i then return i, "Bad face 1" end
 	i, f2 = getFace(modelobj, i) if not i then return i, "Bad face 2" end
@@ -737,14 +737,21 @@ addHeaderFunction("f", function(modelobj, i, vmesh, vlook, vmins, vmaxs, pos, an
 		i, f3 = getFace(modelobj, i) if not i then return i, "Bad face " .. k end
 
 		local v1, v2, v3
+		local vt1, vt2, vt3
 		if invert then
 			v1 = { pos = Vector(vlook[f3[1]]) }
 			v2 = { pos = Vector(vlook[f2[1]]) }
 			v3 = { pos = Vector(vlook[f1[1]]) }
+			vt1 = vtlook[f3[2]]
+			vt2 = vtlook[f2[2]]
+			vt3 = vtlook[f1[2]]
 		else
 			v1 = { pos = Vector(vlook[f1[1]]) }
 			v2 = { pos = Vector(vlook[f2[1]]) }
 			v3 = { pos = Vector(vlook[f3[1]]) }
+			vt1 = vtlook[f1[2]]
+			vt2 = vtlook[f2[2]]
+			vt3 = vtlook[f3[2]]
 		end
 
 		local normal = cross(v3.pos - v1.pos, v2.pos - v1.pos)
@@ -754,10 +761,16 @@ addHeaderFunction("f", function(modelobj, i, vmesh, vlook, vmins, vmaxs, pos, an
 		v2.normal = Vector(normal)
 		v3.normal = Vector(normal)
 
-		local boxDir = getBoxDir(normal)
-		v1.u, v1.v = getBoxUV(v1.pos, boxDir, meshtex)
-		v2.u, v2.v = getBoxUV(v2.pos, boxDir, meshtex)
-		v3.u, v3.v = getBoxUV(v3.pos, boxDir, meshtex)
+		if custom_uvs and vt1 and vt2 and vt3 then
+			v1.u, v1.v = vt1.u, vt1.v
+			v2.u, v2.v = vt2.u, vt2.v
+			v3.u, v3.v = vt3.u, vt3.v
+		else
+			local boxDir = getBoxDir(normal)
+			v1.u, v1.v = getBoxUV(v1.pos, boxDir, meshtex)
+			v2.u, v2.v = getBoxUV(v2.pos, boxDir, meshtex)
+			v3.u, v3.v = getBoxUV(v3.pos, boxDir, meshtex)
+		end
 
 		vmesh[#vmesh + 1] = v1
 		vmesh[#vmesh + 1] = v2
@@ -772,7 +785,7 @@ addHeaderFunction("f", function(modelobj, i, vmesh, vlook, vmins, vmaxs, pos, an
 
 	return i
 end)
-addHeaderFunction("v", function(modelobj, i, vmesh, vlook, vmins, vmaxs, pos, ang, scale, invert, meshtex)
+addHeaderFunction("v", function(modelobj, i, vmesh, vlook, vmins, vmaxs, pos, ang, scale, invert, meshtex, vtlook, custom_uvs)
 	local x, y, z
 	local err
 
@@ -797,8 +810,20 @@ addHeaderFunction("v", function(modelobj, i, vmesh, vlook, vmins, vmaxs, pos, an
 	i, err = skipToNextLine(modelobj, i - 2) if not i then return i, err end
 	return i
 end)
+addHeaderFunction("vt", function(modelobj, i, vmesh, vlook, vmins, vmaxs, pos, ang, scale, invert, meshtex, vtlook, custom_uvs)
+	local u, v
+	local err
+
+	u, i = bytesToNumber(modelobj, i)
+	i, err = skipUntil(modelobj, i, CONDITION_ISNOTSPACE) if not i then return i, err end
+	v, i = bytesToNumber(modelobj, i)
+
+	vtlook[#vtlook + 1] = { u = u, v = 1 - v }
+
+	i, err = skipToNextLine(modelobj, i - 2) if not i then return i, err end
+	return i
+end)
 unimplementedHeader("#")
-unimplementedHeader("vt")
 unimplementedHeader("vn")
 unimplementedHeader("vp")
 unimplementedHeader("l")
@@ -809,7 +834,7 @@ unimplementedHeader("s")
 unimplementedHeader("mtllib")
 unimplementedHeader("usemtl")
 
-local function tryParseObj(modelobj, vmesh, vlook, vmins, vmaxs, pos, ang, scale, invert, meshtex)
+local function tryParseObj(modelobj, vmesh, vlook, vmins, vmaxs, pos, ang, scale, invert, meshtex, vtlook, custom_uvs)
 	local line = 1
 	local i    = 1
 	local len  = #modelobj
@@ -851,7 +876,7 @@ local function tryParseObj(modelobj, vmesh, vlook, vmins, vmaxs, pos, ang, scale
 		-- Skip whitespace
 		i, err = skipUntil(modelobj, i, CONDITION_ISNOTSPACE) if not i then return err, i, line end
 		local newI
-		newI, err = lookup(modelobj, i, vmesh, vlook, vmins, vmaxs, pos, ang, scale, invert, meshtex)
+		newI, err = lookup(modelobj, i, vmesh, vlook, vmins, vmaxs, pos, ang, scale, invert, meshtex, vtlook, custom_uvs)
 		if not newI then return err or "<no error provided>", i, line end
 		line = line + 1
 		i = newI
@@ -880,12 +905,14 @@ local function getVertsFromOBJ(custom, partnext, meshtex, meshbump, vmins, vmaxs
 	if scale and (scale[1] == 1 and scale[2] == 1 and scale[3] == 1) then scale = nil end
 
 	local vlook = {}
+	local vtlook = {}
 	local vmesh = {}
 
 	meshtex = meshtex or 1 / 48
 	local invert = partnext.vinvert
+	local custom_uvs = partnext.custom_uvs
 	local smooth = partnext.vsmooth
-	local parseErr, errChar, errLine = tryParseObj(modelobj, vmesh, vlook, vmins, vmaxs, pos, ang, scale, invert, meshtex)
+	local parseErr, errChar, errLine = tryParseObj(modelobj, vmesh, vlook, vmins, vmaxs, pos, ang, scale, invert, meshtex, vtlook, custom_uvs)
 	if parseErr then
 		if devcvar:GetBool() then
 			ErrorNoHalt("Prop2Mesh getVertsFromOBJ failure at line " .. errLine .. ", char " .. errChar .. ": " .. tostring(parseErr) .. "\n")
