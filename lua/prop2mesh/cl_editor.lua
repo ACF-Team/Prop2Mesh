@@ -100,22 +100,32 @@ local function formatOBJ(filestr)
 			local v2 = string.Explode("/", temp[2])
 			for i  = 3, #temp do
 				local v3 = string.Explode("/", temp[i])
-				condensed[#condensed + 1] = string.format("f %d %d %d\n", v1[1], v2[1], v3[1])
+				if v1[2] and v1[2] ~= "" and v2[2] and v2[2] ~= "" and v3[2] and v3[2] ~= "" then
+					condensed[#condensed + 1] = string.format("f %d/%d %d/%d %d/%d\n", v1[1], v1[2], v2[1], v2[2], v3[1], v3[2])
+				else
+					condensed[#condensed + 1] = string.format("f %d %d %d\n", v1[1], v2[1], v3[1])
+				end
 				v2 = v3
 			end
-		else
-			if head == "v" then
-				local x = tonumber(temp[1])
-				local y = tonumber(temp[2])
-				local z = tonumber(temp[3])
+		elseif head == "v" then
+			local x = tonumber(temp[1])
+			local y = tonumber(temp[2])
+			local z = tonumber(temp[3])
 
-				x = math.abs(x) < 1e-4 and 0 or x
-				y = math.abs(y) < 1e-4 and 0 or y
-				z = math.abs(z) < 1e-4 and 0 or z
+			x = math.abs(x) < 1e-4 and 0 or x
+			y = math.abs(y) < 1e-4 and 0 or y
+			z = math.abs(z) < 1e-4 and 0 or z
 
-				condensed[#condensed + 1] = string.format("v %s %s %s\n", x, y, z)
-				vcount = vcount + 1
-			end
+			condensed[#condensed + 1] = string.format("v %s %s %s\n", x, y, z)
+			vcount = vcount + 1
+		elseif head == "vt" then
+			local u = tonumber(temp[1])
+			local v = tonumber(temp[2])
+
+			u = math.abs(u) < 1e-4 and 0 or u
+			v = math.abs(v) < 1e-4 and 0 or v
+
+			condensed[#condensed + 1] = string.format("vt %s %s\n", u, v)
 		end
 
 		if vcount > 63999 then return end
@@ -812,6 +822,7 @@ local function installEditors(partnode)
 
 	if partnode.new.objd then
 		registerBoolean(partnode, "render_invert", "vinvert")
+		registerBoolean(partnode, "custom_uvs", "custom_uvs")
 		registerFloat(partnode, "render_smooth", "vsmooth", 0, 180)
 	else
 		registerBoolean(partnode, "render_flat", "vsmooth")
@@ -859,8 +870,8 @@ function copydeeper(t, lookup_table)
 end
 
 local function partcopy(from)
-	local a = { pos = {0, 0, 0}, ang = {0, 0, 0}, scale = {1, 1, 1}, vinvert = 0, vinside = 0, vsmooth = 0, submodels = {}, clips = {} }
-	local b = { pos = {0, 0, 0}, ang = {0, 0, 0}, scale = {1, 1, 1}, vinvert = 0, vinside = 0, vsmooth = 0, submodels = {}, clips = {} }
+	local a = { pos = {0, 0, 0}, ang = {0, 0, 0}, scale = {1, 1, 1}, vinvert = 0, custom_uvs = 0, vinside = 0, vsmooth = 0, submodels = {}, clips = {} }
+	local b = { pos = {0, 0, 0}, ang = {0, 0, 0}, scale = {1, 1, 1}, vinvert = 0, custom_uvs = 0, vinside = 0, vsmooth = 0, submodels = {}, clips = {} }
 	for k, v in pairs(from) do
 		if isnumber(v) or isstring(v) then
 			a[k] = v

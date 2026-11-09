@@ -13,6 +13,7 @@
 	bodygroup   -- mask
 	vsmooth     -- unset to use model normals, 0 to use flat shading, degrees to calculate
 	vinvert     -- flip normals
+	custom_uvs  -- enable custom uv coordinates
 	vinside     -- render inside
 	objn        -- prettyprint
 	submodels   -- lookup table of bools that hides submeshes by index
