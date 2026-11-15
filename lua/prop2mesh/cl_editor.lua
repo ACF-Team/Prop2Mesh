@@ -1839,6 +1839,8 @@ function PANEL:RemakeTree()
 			chkUVs:SetFont(editor_font)
 			chkUVs:SetTextColor(self.filebrowser.lblTitle:GetTextColor())
 			chkUVs:SetValue(objImportUVs)
+			chkUVs:SetTooltip("This will increase dupe sizes and load times. Do not enable this unless you know what you are doing!")
+			chkUVs:SetTooltipDelay(0)
 			chkUVs.OnChange = function(pnl, val)
 				objImportUVs = val
 			end
