@@ -51,6 +51,7 @@ local function HideIcons() return false end
 ]]
 local filecache_data = {}
 local filecache_keys = {}
+local objImportUVs = false
 
 local upstreams = {}
 
@@ -87,7 +88,7 @@ local function upstreamProgress()
 	return max
 end
 
-local function formatOBJ(filestr)
+local function formatOBJ(filestr, uvs)
 	local vcount = 0
 	local condensed = {}
 
@@ -100,7 +101,7 @@ local function formatOBJ(filestr)
 			local v2 = string.Explode("/", temp[2])
 			for i  = 3, #temp do
 				local v3 = string.Explode("/", temp[i])
-				if v1[2] and v1[2] ~= "" and v2[2] and v2[2] ~= "" and v3[2] and v3[2] ~= "" then
+				if uvs and v1[2] and v1[2] ~= "" and v2[2] and v2[2] ~= "" and v3[2] and v3[2] ~= "" then
 					condensed[#condensed + 1] = string.format("f %d/%d %d/%d %d/%d\n", v1[1], v1[2], v2[1], v2[2], v3[1], v3[2])
 				else
 					condensed[#condensed + 1] = string.format("f %d %d %d\n", v1[1], v2[1], v3[1])
@@ -118,7 +119,7 @@ local function formatOBJ(filestr)
 
 			condensed[#condensed + 1] = string.format("v %s %s %s\n", x, y, z)
 			vcount = vcount + 1
-		elseif head == "vt" then
+		elseif uvs and head == "vt" then
 			local u = tonumber(temp[1]) or 0
 			local v = tonumber(temp[2]) or 0
 
@@ -822,7 +823,6 @@ local function installEditors(partnode)
 
 	if partnode.new.objd then
 		registerBoolean(partnode, "render_invert", "vinvert")
-		registerBoolean(partnode, "custom_uvs", "custom_uvs")
 		registerFloat(partnode, "render_smooth", "vsmooth", 0, 180)
 	else
 		registerBoolean(partnode, "render_flat", "vsmooth")
@@ -870,8 +870,8 @@ function copydeeper(t, lookup_table)
 end
 
 local function partcopy(from)
-	local a = { pos = {0, 0, 0}, ang = {0, 0, 0}, scale = {1, 1, 1}, vinvert = 0, custom_uvs = 0, vinside = 0, vsmooth = 0, submodels = {}, clips = {} }
-	local b = { pos = {0, 0, 0}, ang = {0, 0, 0}, scale = {1, 1, 1}, vinvert = 0, custom_uvs = 0, vinside = 0, vsmooth = 0, submodels = {}, clips = {} }
+	local a = { pos = {0, 0, 0}, ang = {0, 0, 0}, scale = {1, 1, 1}, vinvert = 0, vinside = 0, vsmooth = 0, submodels = {}, clips = {} }
+	local b = { pos = {0, 0, 0}, ang = {0, 0, 0}, scale = {1, 1, 1}, vinvert = 0, vinside = 0, vsmooth = 0, submodels = {}, clips = {} }
 	for k, v in pairs(from) do
 		if isnumber(v) or isstring(v) then
 			a[k] = v
@@ -934,10 +934,10 @@ end
 local function attach(pathnode)
 	local filepath = pathnode.path
 	local filestr = file.Read(pathnode.path)
-	local filecrc = tostring(util.CRC(filestr))
+	local filecrc = tostring(util.CRC(filestr)) .. (objImportUVs and "_uv" or "")
 
 	if not filecache_data[filecrc] then
-		local valid, contents = pcall(formatOBJ, filestr)
+		local valid, contents = pcall(formatOBJ, filestr, objImportUVs)
 		if not valid then
 			chat.AddText(Color(255, 125, 125), "unexpected error!")
 			return
@@ -1831,6 +1831,17 @@ function PANEL:RemakeTree()
 				self.filebrowser:Remove()
 			end
 			self.filebrowser = self:OpenFileBrowser("Attach obj file", "p2m", {"*.txt", "*.obj"}, objlist, objfilemenu)
+
+			local chkUVs = vgui.Create("DCheckBoxLabel", self.filebrowser)
+			chkUVs:Dock(BOTTOM)
+			chkUVs:DockMargin(4, 4, 4, 2)
+			chkUVs:SetText("import uvs")
+			chkUVs:SetFont(editor_font)
+			chkUVs:SetTextColor(self.filebrowser.lblTitle:GetTextColor())
+			chkUVs:SetValue(objImportUVs)
+			chkUVs.OnChange = function(pnl, val)
+				objImportUVs = val
+			end
 		end
 
 		objlist.conscale = setscale

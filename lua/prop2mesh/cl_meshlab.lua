@@ -728,7 +728,7 @@ local function getFace(modelobj, i)
 	return i, face
 end
 
-addHeaderFunction("f", function(modelobj, i, vmesh, vlook, vmins, vmaxs, pos, ang, scale, invert, meshtex, vtlook, custom_uvs)
+addHeaderFunction("f", function(modelobj, i, vmesh, vlook, vmins, vmaxs, pos, ang, scale, invert, meshtex, vtlook)
 	local f1, f2
 	i, f1 = getFace(modelobj, i) if not i then return i, "Bad face 1" end
 	i, f2 = getFace(modelobj, i) if not i then return i, "Bad face 2" end
@@ -761,7 +761,7 @@ addHeaderFunction("f", function(modelobj, i, vmesh, vlook, vmins, vmaxs, pos, an
 		v2.normal = Vector(normal)
 		v3.normal = Vector(normal)
 
-		if custom_uvs and vt1 and vt2 and vt3 then
+		if vt1 and vt2 and vt3 then
 			v1.u, v1.v = vt1.u, vt1.v
 			v2.u, v2.v = vt2.u, vt2.v
 			v3.u, v3.v = vt3.u, vt3.v
@@ -785,7 +785,7 @@ addHeaderFunction("f", function(modelobj, i, vmesh, vlook, vmins, vmaxs, pos, an
 
 	return i
 end)
-addHeaderFunction("v", function(modelobj, i, vmesh, vlook, vmins, vmaxs, pos, ang, scale, invert, meshtex, vtlook, custom_uvs)
+addHeaderFunction("v", function(modelobj, i, vmesh, vlook, vmins, vmaxs, pos, ang, scale, invert, meshtex, vtlook)
 	local x, y, z
 	local err
 
@@ -810,7 +810,7 @@ addHeaderFunction("v", function(modelobj, i, vmesh, vlook, vmins, vmaxs, pos, an
 	i, err = skipToNextLine(modelobj, i - 2) if not i then return i, err end
 	return i
 end)
-addHeaderFunction("vt", function(modelobj, i, vmesh, vlook, vmins, vmaxs, pos, ang, scale, invert, meshtex, vtlook, custom_uvs)
+addHeaderFunction("vt", function(modelobj, i, vmesh, vlook, vmins, vmaxs, pos, ang, scale, invert, meshtex, vtlook)
 	local u, v
 	local err
 
@@ -834,7 +834,7 @@ unimplementedHeader("s")
 unimplementedHeader("mtllib")
 unimplementedHeader("usemtl")
 
-local function tryParseObj(modelobj, vmesh, vlook, vmins, vmaxs, pos, ang, scale, invert, meshtex, vtlook, custom_uvs)
+local function tryParseObj(modelobj, vmesh, vlook, vmins, vmaxs, pos, ang, scale, invert, meshtex, vtlook)
 	local line = 1
 	local i    = 1
 	local len  = #modelobj
@@ -876,7 +876,7 @@ local function tryParseObj(modelobj, vmesh, vlook, vmins, vmaxs, pos, ang, scale
 		-- Skip whitespace
 		i, err = skipUntil(modelobj, i, CONDITION_ISNOTSPACE) if not i then return err, i, line end
 		local newI
-		newI, err = lookup(modelobj, i, vmesh, vlook, vmins, vmaxs, pos, ang, scale, invert, meshtex, vtlook, custom_uvs)
+		newI, err = lookup(modelobj, i, vmesh, vlook, vmins, vmaxs, pos, ang, scale, invert, meshtex, vtlook)
 		if not newI then return err or "<no error provided>", i, line end
 		line = line + 1
 		i = newI
@@ -910,9 +910,8 @@ local function getVertsFromOBJ(custom, partnext, meshtex, meshbump, vmins, vmaxs
 
 	meshtex = meshtex or 1 / 48
 	local invert = partnext.vinvert
-	local custom_uvs = partnext.custom_uvs
 	local smooth = partnext.vsmooth
-	local parseErr, errChar, errLine = tryParseObj(modelobj, vmesh, vlook, vmins, vmaxs, pos, ang, scale, invert, meshtex, vtlook, custom_uvs)
+	local parseErr, errChar, errLine = tryParseObj(modelobj, vmesh, vlook, vmins, vmaxs, pos, ang, scale, invert, meshtex, vtlook)
 	if parseErr then
 		if devcvar:GetBool() then
 			ErrorNoHalt("Prop2Mesh getVertsFromOBJ failure at line " .. errLine .. ", char " .. errChar .. ": " .. tostring(parseErr) .. "\n")
