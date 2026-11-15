@@ -119,8 +119,8 @@ local function formatOBJ(filestr)
 			condensed[#condensed + 1] = string.format("v %s %s %s\n", x, y, z)
 			vcount = vcount + 1
 		elseif head == "vt" then
-			local u = tonumber(temp[1])
-			local v = tonumber(temp[2])
+			local u = tonumber(temp[1]) or 0
+			local v = tonumber(temp[2]) or 0
 
 			u = math.abs(u) < 1e-4 and 0 or u
 			v = math.abs(v) < 1e-4 and 0 or v
